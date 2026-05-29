@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  penguin-classifier:
+    build: .
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./data:/app/data
+      - ./model:/app/model
+    restart: unless-stopped
