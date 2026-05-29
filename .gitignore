@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Projektspezifisch: Laufzeit-Daten nicht versionieren
+data/penguins.csv
+data/new_observations.csv
+model/classifier.pkl
