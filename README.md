@@ -10,7 +10,7 @@ Interaktive Web-Applikation zur automatischen Artbestimmung von Pinguinen anhand
 ## Installation (3 Schritte)
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/mqxi/penguin-classifier
 cd penguin-classifier
 docker compose up --build
 ```
@@ -65,10 +65,10 @@ python app/app.py
 
 ## Funktionsweise
 
-1. **Eingabe**: Messdaten eines Pinguins werden in Panel ① eingegeben.
-2. **Klassifizierung**: Der Random-Forest-Klassifikator gibt Art, Konfidenz und Klassenwahrscheinlichkeiten aus (Panel ②).
-3. **Visualisierung**: Der neue Datenpunkt wird im Scatter-Plot eingetragen (Panel ③).
-4. **Retraining**: Ab 10 neuen Beobachtungen kann das Modell auf den kombinierten Daten neu trainiert werden.
+1. **Eingabe**: Messdaten eines Pinguins werden im linken Panel eingegeben.
+2. **Klassifizierung**: Der Random-Forest-Klassifikator gibt Art, Konfidenz und Klassenwahrscheinlichkeiten aus (mittleres Panel).
+3. **Visualisierung**: Der neue Datenpunkt wird im Scatter-Plot eingetragen (rechtes Panel).
+4. **Retraining**: Der Button im rechten Panel lädt den Trainingsdatensatz frisch von GitHub und trainiert das Modell auf den kombinierten Daten (Originaldatensatz + eigene Beobachtungen) neu.
 
 ## Lizenz
 
