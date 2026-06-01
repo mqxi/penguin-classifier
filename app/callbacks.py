@@ -8,7 +8,11 @@ import pandas as pd
 from dash import Input, Output, State, callback, html, no_update
 import dash_bootstrap_components as dbc
 
+import plotly.colors as pc
+
 from data_handler import (
+    correct_last_observation,
+    count_species_samples,
     get_combined_data,
     load_observations,
     load_training_data,
@@ -16,6 +20,8 @@ from data_handler import (
     save_observation,
 )
 from model import SPECIES_CLASSES, get_or_train_model, predict, retrain_model
+
+NEW_SPECIES_MIN_SAMPLES = 15
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +49,23 @@ def _build_scatter(df_train: pd.DataFrame, new_point: dict | None = None) -> go.
         Plotly Figure.
     """
     df_plot = df_train.dropna(subset=["bill_length_mm", "flipper_length_mm", "species"]).copy()
-    df_plot = df_plot[df_plot["species"].isin(SPECIES_CLASSES)]
+
+    # Farben: bekannte Arten aus SPECIES_COLORS, neue Arten aus Plotly-Palette
+    all_species = sorted(df_plot["species"].unique().tolist())
+    extra_colors = pc.qualitative.Plotly
+    color_map = dict(SPECIES_COLORS)
+    extra_idx = 0
+    for sp in all_species:
+        if sp not in color_map:
+            color_map[sp] = extra_colors[extra_idx % len(extra_colors)]
+            extra_idx += 1
 
     fig = px.scatter(
         df_plot,
         x="bill_length_mm",
         y="flipper_length_mm",
         color="species",
-        color_discrete_map=SPECIES_COLORS,
+        color_discrete_map=color_map,
         opacity=0.7,
         labels={
             "bill_length_mm": "Schnabellänge (mm)",
@@ -170,9 +185,9 @@ def _build_result_content(result: dict) -> list:
         html.Div("Klassenwahrscheinlichkeiten", style={"fontWeight": "600", "fontSize": "0.85rem", "color": "#444", "marginBottom": "8px"}),
     ]
 
-    for cls in SPECIES_CLASSES:
+    for cls in sorted(probs.keys()):
         p = probs.get(cls, 0.0)
-        cls_color = SPECIES_COLORS.get(cls, "#999")
+        cls_color = SPECIES_COLORS.get(cls, "#607d8b")
         components.append(
             html.Div(style={"marginBottom": "6px"}, children=[
                 html.Div(
@@ -265,6 +280,9 @@ def register_callbacks(app) -> None:
         Output("scatter-plot", "figure"),
         Output("input-error", "children"),
         Output("store-new-point", "data"),
+        Output("correction-panel", "style"),
+        Output("correction-species-dropdown", "value"),
+        Output("correction-status", "children"),
         Input("btn-classify", "n_clicks"),
         State("input-bill-length", "value"),
         State("input-bill-depth", "value"),
@@ -286,12 +304,14 @@ def register_callbacks(app) -> None:
         if not sex: missing.append("Geschlecht")
 
         df_train = load_training_data()
+        correction_hidden = {"display": "none", "marginTop": "16px"}
+        correction_visible = {"display": "block", "marginTop": "16px"}
 
         if missing:
             error_msg = f"Bitte alle Felder ausfüllen. Fehlend: {', '.join(missing)}."
             fig = _build_scatter(df_train)
             metrics_box = _build_metrics_box(stored_metrics or {})
-            return no_update, metrics_box, fig, error_msg, no_update
+            return no_update, metrics_box, fig, error_msg, no_update, correction_hidden, None, ""
 
         input_dict = {
             "bill_length_mm": float(bill_length),
@@ -308,7 +328,7 @@ def register_callbacks(app) -> None:
             logger.error(f"Vorhersagefehler: {e}")
             return (
                 html.P(f"Fehler bei der Klassifizierung: {e}", style={"color": "#c62828"}),
-                no_update, no_update, "", no_update,
+                no_update, no_update, "", no_update, correction_hidden, None, "",
             )
 
         try:
@@ -321,7 +341,7 @@ def register_callbacks(app) -> None:
         result_children = _build_result_content(result)
         metrics_box = _build_metrics_box(stored_metrics or {})
 
-        return result_children, metrics_box, fig, "", new_point
+        return result_children, metrics_box, fig, "", new_point, correction_visible, None, ""
 
     @app.callback(
         Output("input-bill-length", "value"),
@@ -336,6 +356,86 @@ def register_callbacks(app) -> None:
     def reset_inputs(n_clicks):
         """Setzt alle Eingabefelder zurück."""
         return None, None, None, None, None, None
+
+    @app.callback(
+        Output("correction-new-species-input", "style"),
+        Input("correction-species-dropdown", "value"),
+        prevent_initial_call=True,
+    )
+    def toggle_new_species_input(value):
+        """Blendet das Freitextfeld ein wenn 'Neue Art...' gewählt."""
+        from layout import INPUT_STYLE
+        if value == "__new__":
+            return {**INPUT_STYLE, "display": "block", "marginBottom": "8px"}
+        return {**INPUT_STYLE, "display": "none", "marginBottom": "8px"}
+
+    @app.callback(
+        Output("correction-status", "children", allow_duplicate=True),
+        Output("modal-new-species-info", "is_open"),
+        Output("modal-new-species-body", "children"),
+        Input("btn-save-correction", "n_clicks"),
+        State("correction-species-dropdown", "value"),
+        State("correction-new-species-input", "value"),
+        prevent_initial_call=True,
+    )
+    def save_correction(n_clicks, selected_species, new_species_text):
+        """Speichert die Korrektur zur letzten Beobachtung."""
+        if not selected_species:
+            return html.Span("Bitte eine Art auswählen.", style={"color": "#c62828"}), False, ""
+
+        corrected = new_species_text.strip() if selected_species == "__new__" else selected_species
+
+        if selected_species == "__new__" and not corrected:
+            return html.Span("Bitte Artbezeichnung eingeben.", style={"color": "#c62828"}), False, ""
+
+        try:
+            correct_last_observation(corrected)
+        except Exception as e:
+            logger.error(f"Korrektur fehlgeschlagen: {e}")
+            return html.Span(f"Fehler: {e}", style={"color": "#c62828"}), False, ""
+
+        # Neue Art: Modal mit Sample-Counter anzeigen
+        if selected_species == "__new__":
+            count = count_species_samples(corrected)
+            remaining = max(0, NEW_SPECIES_MIN_SAMPLES - count)
+            modal_body = html.Div([
+                html.P([
+                    html.Strong(corrected),
+                    f" wurde als neue Art gespeichert.",
+                ]),
+                html.P([
+                    f"Bisher gespeicherte Samples dieser Art: ",
+                    html.Strong(str(count)),
+                    f" / {NEW_SPECIES_MIN_SAMPLES} empfohlen.",
+                ]),
+                html.Div(
+                    style={"backgroundColor": "#fff3e0", "borderRadius": "6px", "padding": "10px 14px", "marginTop": "10px"},
+                    children=[
+                        html.P(
+                            f"Noch {remaining} weitere Sample(s) empfohlen bevor das Retraining stabile Ergebnisse liefert." if remaining > 0
+                            else "Genug Samples – Retraining jetzt empfohlen.",
+                            style={"margin": 0, "fontSize": "0.88rem", "color": "#e65100"},
+                        ),
+                        html.P(
+                            "Sobald genug Beobachtungen gesammelt sind, kann das Modell über den Button '🔄 Neu trainieren' im rechten Panel aktualisiert werden.",
+                            style={"margin": "6px 0 0 0", "fontSize": "0.82rem", "color": "#777"},
+                        ),
+                    ],
+                ),
+            ])
+            status = html.Span(f"✓ Als '{corrected}' gespeichert.", style={"color": "#2e7d32"})
+            return status, True, modal_body
+
+        status = html.Span(f"✓ Korrigiert: {corrected}", style={"color": "#2e7d32"})
+        return status, False, ""
+
+    @app.callback(
+        Output("modal-new-species-info", "is_open", allow_duplicate=True),
+        Input("modal-close", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def close_modal(n_clicks):
+        return False
 
     @app.callback(
         Output("model-metrics-box", "children", allow_duplicate=True),
