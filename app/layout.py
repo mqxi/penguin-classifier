@@ -32,13 +32,6 @@ COLORS = {
     "gray_bg": "#f5f5f5",
 }
 
-# Wissenschaftliche Namen
-SCIENTIFIC_NAMES = {
-    "Adelie": "Pygoscelis adeliae",
-    "Chinstrap": "Pygoscelis antarcticus",
-    "Gentoo": "Pygoscelis papua",
-}
-
 PANEL_STYLE = {
     "backgroundColor": COLORS["panel_bg"],
     "border": f"1px solid {COLORS['panel_border']}",

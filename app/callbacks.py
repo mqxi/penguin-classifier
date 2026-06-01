@@ -5,11 +5,12 @@ import logging
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from dash import Input, Output, State, callback, html, no_update
-import dash_bootstrap_components as dbc
+from dash import Input, Output, State, html, no_update
 
 import plotly.colors as pc
+import plotly.io as pio
 
+from layout import INPUT_STYLE
 from data_handler import (
     correct_last_observation,
     count_species_samples,
@@ -19,13 +20,12 @@ from data_handler import (
     reload_dataset,
     save_observation,
 )
-from model import SPECIES_CLASSES, get_or_train_model, predict, retrain_model
+from model import get_or_train_model, predict, retrain_model
 
 NEW_SPECIES_MIN_SAMPLES = 15
 
 logger = logging.getLogger(__name__)
 
-# Farbzuordnung Arten
 SPECIES_COLORS = {
     "Adelie": "#fb8c00",
     "Chinstrap": "#7b2d8b",
@@ -55,7 +55,6 @@ def _build_scatter(
     """
     df_plot = df_train.dropna(subset=["bill_length_mm", "flipper_length_mm", "species"]).copy()
 
-    # Farben: bekannte Arten aus SPECIES_COLORS, neue Arten aus Plotly-Palette
     all_species = sorted(df_plot["species"].unique().tolist())
     extra_colors = pc.qualitative.Plotly
     color_map = dict(SPECIES_COLORS)
@@ -80,15 +79,12 @@ def _build_scatter(
         hover_data=["bill_depth_mm", "body_mass_g", "island", "sex"],
         title="",
     )
-    # Punktgröße erhöhen
     fig.update_traces(marker=dict(size=8))
 
-    # Neue Beobachtungen aus new_observations.csv einblenden – nur korrigierte Einträge
     if df_observations is not None and not df_observations.empty:
         df_obs_plot = df_observations.dropna(subset=["bill_length_mm", "flipper_length_mm"]).copy()
-        # Nur Einträge mit expliziter Korrektur anzeigen – reine Modellvorhersagen gehören zu den Trainingsdaten
         if "is_corrected" in df_obs_plot.columns:
-            df_obs_plot = df_obs_plot[df_obs_plot["is_corrected"] == True].copy()
+            df_obs_plot = df_obs_plot[df_obs_plot["is_corrected"]].copy()
         if not df_obs_plot.empty:
             df_obs_plot["_label"] = df_obs_plot["corrected_species"]
 
@@ -113,7 +109,6 @@ def _build_scatter(
                     ),
                 ))
 
-    # Neuen Datenpunkt hinzufügen
     if new_point is not None:
         fig.add_trace(go.Scatter(
             x=[new_point.get("bill_length_mm")],
@@ -301,7 +296,6 @@ def register_callbacks(app) -> None:
         """Befüllt Scatter-Plot und Metriken beim Seitenaufruf – nur Trainingsdaten."""
         try:
             df_train = load_training_data()
-            # App-Start trainiert immer auf penguins.csv – Modell ist garantiert sauber
             _, metrics = get_or_train_model(df_train)
             fig = _build_scatter(df_train)
             metrics_box = _build_metrics_box(metrics)
@@ -379,7 +373,6 @@ def register_callbacks(app) -> None:
             logger.warning(f"Beobachtung konnte nicht gespeichert werden: {e}")
 
         new_point = {**input_dict, "predicted_species": result["species"]}
-        # Nach Retrain Observations mitzeichnen, sonst nur Trainingsdaten
         df_obs = load_observations() if retrain_fig_json else None
         fig = _build_scatter(df_train, new_point=new_point, df_observations=df_obs)
         result_children = _build_result_content(result)
@@ -408,7 +401,6 @@ def register_callbacks(app) -> None:
     )
     def toggle_new_species_input(value):
         """Blendet das Freitextfeld ein wenn 'Neue Art...' gewählt."""
-        from layout import INPUT_STYLE
         if value == "__new__":
             return {**INPUT_STYLE, "display": "block", "marginBottom": "8px"}
         return {**INPUT_STYLE, "display": "none", "marginBottom": "8px"}
@@ -438,7 +430,6 @@ def register_callbacks(app) -> None:
             logger.error(f"Korrektur fehlgeschlagen: {e}")
             return html.Span(f"Fehler: {e}", style={"color": "#c62828"}), False, ""
 
-        # Neue Art: Modal mit Sample-Counter anzeigen
         if selected_species == "__new__":
             count = count_species_samples(corrected)
             remaining = max(0, NEW_SPECIES_MIN_SAMPLES - count)
@@ -487,6 +478,7 @@ def register_callbacks(app) -> None:
     )
     def render_page(pathname):
         """Routet zwischen Hauptseite und Info-Seite."""
+        # Lazy Import – verhindert Circular-Import (layout importiert callbacks nicht, aber App-Init-Reihenfolge)
         from layout import build_info_page, build_main_content
         if pathname == "/info":
             return build_info_page()
@@ -545,5 +537,4 @@ def register_callbacks(app) -> None:
         """Überträgt das nach Retraining erzeugte Figure-JSON in den Scatter-Plot."""
         if not fig_json:
             return no_update
-        import plotly.io as pio
         return pio.from_json(fig_json)

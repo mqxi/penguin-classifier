@@ -20,7 +20,7 @@ import dash_bootstrap_components as dbc
 from callbacks import register_callbacks
 from data_handler import load_training_data
 from layout import build_layout
-from model import MODEL_PATH, get_or_train_model, train_model, save_model
+from model import train_model, save_model
 
 logging.basicConfig(
     level=logging.INFO,

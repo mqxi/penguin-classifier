@@ -5,6 +5,7 @@ Kümmert sich um das Laden des Trainingsdatensatzes, das Speichern neuer
 Beobachtungen und das Zusammenführen beider Quellen für das Retraining.
 """
 
+import io
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +44,7 @@ def download_dataset() -> None:
         response = requests.get(DATASET_URL, timeout=30)
         response.raise_for_status()
 
-        df = pd.read_csv(pd.io.common.StringIO(response.text))
+        df = pd.read_csv(io.StringIO(response.text))
 
         # Spaltennamen vereinheitlichen (Leerzeichen raus, alles klein)
         df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
@@ -152,8 +153,8 @@ def count_species_samples(species: str) -> int:
     df_obs = load_observations()
     if df_obs.empty:
         return 0
-    corrected = df_obs[df_obs["is_corrected"] == True]["corrected_species"]
-    predicted = df_obs[df_obs["is_corrected"] != True]["predicted_species"]
+    corrected = df_obs[df_obs["is_corrected"]]["corrected_species"]
+    predicted = df_obs[~df_obs["is_corrected"]]["predicted_species"]
     all_labels = pd.concat([corrected, predicted])
     return int((all_labels == species).sum())
 
