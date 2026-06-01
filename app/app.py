@@ -20,7 +20,7 @@ import dash_bootstrap_components as dbc
 from callbacks import register_callbacks
 from data_handler import load_training_data
 from layout import build_layout
-from model import get_or_train_model
+from model import MODEL_PATH, get_or_train_model, train_model, save_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,8 +39,11 @@ def initialize_app() -> dict:
     logger.info("Initialisierung: Lade Trainingsdaten...")
     df_train = load_training_data()
 
-    logger.info("Initialisierung: Lade/trainiere Modell...")
-    _, metrics = get_or_train_model(df_train)
+    # Beim Start immer auf penguins.csv neu trainieren – kein persistiertes Modell laden,
+    # damit neue Arten aus new_observations erst nach explizitem Retrain aktiv werden.
+    logger.info("Initialisierung: Trainiere Modell auf Originaldaten...")
+    pipeline, metrics = train_model(df_train)
+    save_model(pipeline)
 
     logger.info(f"Initialisierung abgeschlossen. Accuracy: {metrics['accuracy']:.4f}")
     return metrics
