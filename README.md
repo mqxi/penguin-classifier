@@ -38,7 +38,7 @@ python app/app.py
 |---|---|
 | `app/app.py` | Einstiegspunkt der Dash-Applikation |
 | `app/layout.py` | UI-Layout: 3-Panel-Aufbau (Eingabe / Ergebnis / Visualisierung) |
-| `app/callbacks.py` | Dash-Callbacks: Klassifizieren, Reset, Retraining |
+| `app/callbacks.py` | Dash-Callbacks: Klassifizieren, Reset, Retraining, Korrektur |
 | `app/model.py` | ML-Pipeline: Random Forest mit sklearn, Training und Vorhersage |
 | `app/data_handler.py` | Datenverwaltung: Download, Laden, Speichern von Beobachtungen |
 | `data/penguins.csv` | Trainingsdatensatz (wird beim ersten Start heruntergeladen) |
@@ -67,8 +67,9 @@ python app/app.py
 
 1. **Eingabe**: Messdaten eines Pinguins werden im linken Panel eingegeben.
 2. **Klassifizierung**: Der Random-Forest-Klassifikator gibt Art, Konfidenz und Klassenwahrscheinlichkeiten aus (mittleres Panel).
-3. **Visualisierung**: Der neue Datenpunkt wird im Scatter-Plot eingetragen (rechtes Panel).
-4. **Retraining**: Der Button im rechten Panel lädt den Trainingsdatensatz frisch von GitHub und trainiert das Modell auf den kombinierten Daten (Originaldatensatz + eigene Beobachtungen) neu.
+3. **Korrektur**: Die Vorhersage kann direkt im Ergebnis-Panel abgelehnt und manuell korrigiert werden. Neue Artbezeichnungen sind ebenfalls möglich; ein Hinweisdialog informiert über den empfohlenen Mindestwert von 15 Samples für stabiles Retraining.
+4. **Visualisierung**: Der neue Datenpunkt wird im Scatter-Plot eingetragen (rechtes Panel).
+5. **Retraining**: Der Button im rechten Panel lädt den Trainingsdatensatz frisch von GitHub und trainiert das Modell auf den kombinierten Daten (Originaldatensatz + eigene Beobachtungen, inkl. Korrekturen) neu.
 
 ## Lizenz
 
