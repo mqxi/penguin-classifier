@@ -107,6 +107,16 @@ class TestRetrain:
         cm = metrics["confusion_matrix"]
         assert cm.shape == (3, 3)
 
+    def test_retrain_eval_on_separate_df(self, sample_df, tmp_path):
+        """Evaluation auf df_eval, Training auf df_combined – keine Data Leakage."""
+        from model import retrain_model
+        import model as m
+        m.MODEL_PATH = tmp_path / "classifier.pkl"
+
+        _, metrics = retrain_model(df_combined=sample_df, df_eval=sample_df)
+        assert 0.0 <= metrics["accuracy"] <= 1.0
+        assert metrics["n_train"] == len(sample_df.dropna(subset=["species"]))
+
 
 class TestPredict:
     """Tests für predict()."""
@@ -178,3 +188,50 @@ class TestPredict:
                 "flipper_length_mm": 195.0, "body_mass_g": 4200.0,
                 "island": "Dream", "sex": "Male",
             })
+
+
+class TestDataHandler:
+    """Tests für Korrektur-Logik in data_handler.py."""
+
+    def test_save_and_load_observation(self, tmp_path, monkeypatch):
+        """Gespeicherte Beobachtung ist danach in load_observations() vorhanden."""
+        import data_handler as dh
+        monkeypatch.setattr(dh, "OBSERVATIONS_CSV", tmp_path / "obs.csv")
+
+        dh.save_observation(
+            {"bill_length_mm": 45.0, "bill_depth_mm": 17.0, "flipper_length_mm": 195.0,
+             "body_mass_g": 3500.0, "island": "Dream", "sex": "Female"},
+            predicted_species="Chinstrap",
+        )
+        df = dh.load_observations()
+        assert len(df) == 1
+        assert df.iloc[0]["predicted_species"] == "Chinstrap"
+        assert df.iloc[0]["is_corrected"] == False
+
+    def test_correct_last_observation(self, tmp_path, monkeypatch):
+        """correct_last_observation setzt corrected_species und is_corrected=True."""
+        import data_handler as dh
+        monkeypatch.setattr(dh, "OBSERVATIONS_CSV", tmp_path / "obs.csv")
+
+        dh.save_observation(
+            {"bill_length_mm": 39.0, "bill_depth_mm": 18.5, "flipper_length_mm": 182.0,
+             "body_mass_g": 3750.0, "island": "Torgersen", "sex": "Male"},
+            predicted_species="Chinstrap",
+        )
+        dh.correct_last_observation("Adelie")
+        df = dh.load_observations()
+        assert df.iloc[-1]["corrected_species"] == "Adelie"
+        assert df.iloc[-1]["is_corrected"] == True
+
+    def test_count_species_samples(self, tmp_path, monkeypatch):
+        """count_species_samples zählt korrigierte und unkorrekte Einträge korrekt."""
+        import data_handler as dh
+        monkeypatch.setattr(dh, "OBSERVATIONS_CSV", tmp_path / "obs.csv")
+
+        base = {"bill_length_mm": 45.0, "bill_depth_mm": 17.0,
+                "flipper_length_mm": 195.0, "body_mass_g": 3500.0,
+                "island": "Dream", "sex": "Female"}
+        dh.save_observation(base, predicted_species="Dino", corrected_species="Dino")
+        dh.save_observation(base, predicted_species="Dino", corrected_species="Dino")
+        assert dh.count_species_samples("Dino") == 2
+        assert dh.count_species_samples("Adelie") == 0
