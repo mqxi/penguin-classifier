@@ -66,14 +66,21 @@ def _build_pipeline() -> Pipeline:
 
 def train_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
     """Trainiert das Modell und gibt Pipeline + Evaluationsmetriken zurück."""
-    # Zeilen ohne Zielwert entfernen und auf die drei bekannten Klassen filtern
     df_clean = df.dropna(subset=[TARGET]).copy()
-    df_clean = df_clean[df_clean[TARGET].isin(SPECIES_CLASSES)]
+    # Klassen mit weniger als 2 Samples rausfiltern – stratifizierter Split braucht mind. 2
+    class_counts = df_clean[TARGET].value_counts()
+    valid_classes = class_counts[class_counts >= 2].index
+    dropped = set(class_counts[class_counts < 2].index)
+    if dropped:
+        logger.warning(f"Klassen mit zu wenig Samples für Training ignoriert: {dropped}")
+    df_clean = df_clean[df_clean[TARGET].isin(valid_classes)]
+
+    classes = sorted(df_clean[TARGET].unique().tolist())
 
     X = df_clean[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
     y = df_clean[TARGET]
 
-    logger.info(f"Starte Training mit {len(X)} Datenpunkten")
+    logger.info(f"Starte Training mit {len(X)} Datenpunkten, Klassen: {classes}")
 
     # 80/20 Split, stratifiziert damit alle Klassen im Test-Set vertreten sind
     X_train, X_test, y_train, y_test = train_test_split(
@@ -87,7 +94,7 @@ def train_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
     y_pred = pipeline.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred, average="weighted")
-    cm = confusion_matrix(y_test, y_pred, labels=SPECIES_CLASSES)
+    cm = confusion_matrix(y_test, y_pred, labels=classes)
 
     # Zusätzlich 5-fache Kreuzvalidierung für stabilere Schätzung
     cv_scores = cross_val_score(pipeline, X, y, cv=5, scoring="accuracy")
@@ -139,7 +146,8 @@ def get_or_train_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
     if pipeline is not None:
         # Metriken neu berechnen ohne das Modell neu zu trainieren
         df_clean = df.dropna(subset=[TARGET]).copy()
-        df_clean = df_clean[df_clean[TARGET].isin(SPECIES_CLASSES)]
+        known_classes = list(pipeline.classes_)
+        df_clean = df_clean[df_clean[TARGET].isin(known_classes)]
         X = df_clean[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
         y = df_clean[TARGET]
 
@@ -149,7 +157,7 @@ def get_or_train_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
         y_pred = pipeline.predict(X_test)
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
-        cm = confusion_matrix(y_test, y_pred, labels=SPECIES_CLASSES)
+        cm = confusion_matrix(y_test, y_pred, labels=known_classes)
         cv_scores = cross_val_score(pipeline, X, y, cv=5, scoring="accuracy")
 
         metrics = {
@@ -197,10 +205,6 @@ def predict(input_dict: dict) -> dict:
         classes = pipeline.classes_
 
         prob_dict = {cls: round(float(p), 4) for cls, p in zip(classes, proba)}
-        # Sicherstellen dass alle drei Klassen im Dict sind
-        for cls in SPECIES_CLASSES:
-            if cls not in prob_dict:
-                prob_dict[cls] = 0.0
 
         predicted_species = classes[np.argmax(proba)]
         confidence = float(np.max(proba))
