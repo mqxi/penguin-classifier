@@ -177,10 +177,30 @@ def get_or_train_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
     return pipeline, metrics
 
 
-def retrain_model(df: pd.DataFrame) -> tuple[Pipeline, dict]:
-    """Trainiert das Modell auf den übergebenen Daten neu und überschreibt die .pkl."""
-    pipeline, metrics = train_model(df)
+def retrain_model(df_combined: pd.DataFrame, df_eval: pd.DataFrame | None = None) -> tuple[Pipeline, dict]:
+    """Trainiert das Modell auf df_combined neu; Evaluation auf df_eval (Originaldaten).
+
+    df_eval wird für einen sauberen Train/Test-Split verwendet damit neue Beobachtungen
+    nicht als Testdaten dienen und die Metriken verfälschen.
+    """
+    df_for_eval = df_eval if df_eval is not None else df_combined
+    _, metrics = train_model(df_for_eval)
+
+    # Vollständiges Training auf kombinierten Daten (ohne Eval-Split)
+    df_clean = df_combined.dropna(subset=[TARGET]).copy()
+    class_counts = df_clean[TARGET].value_counts()
+    valid_classes = class_counts[class_counts >= 2].index
+    df_clean = df_clean[df_clean[TARGET].isin(valid_classes)]
+    X_all = df_clean[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    y_all = df_clean[TARGET]
+
+    pipeline = _build_pipeline()
+    pipeline.fit(X_all, y_all)
     save_model(pipeline)
+
+    metrics["n_train"] = len(X_all)
+    metrics["n_total"] = len(X_all)
+    logger.info(f"Retraining auf {len(X_all)} Datenpunkten abgeschlossen")
     return pipeline, metrics
 
 

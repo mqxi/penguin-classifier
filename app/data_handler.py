@@ -70,13 +70,12 @@ def download_dataset() -> None:
 
 
 def reload_dataset() -> None:
-    """Löscht den lokalen Datensatz und lädt ihn frisch herunter.
+    """Lädt den Datensatz frisch herunter und überschreibt die lokale Kopie.
 
     Nützlich wenn der Quelldatensatz auf GitHub aktualisiert wurde.
+    Kein explizites Löschen – vermeidet WinError 32 wenn die Datei noch geöffnet ist.
     """
-    if TRAINING_CSV.exists():
-        TRAINING_CSV.unlink()
-        logger.info("Lokaler Datensatz gelöscht – lade neu herunter...")
+    logger.info("Lade Datensatz frisch herunter...")
     download_dataset()
 
 
