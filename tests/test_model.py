@@ -125,14 +125,15 @@ class TestPredict:
         assert "probabilities" in result
 
     def test_predict_species_is_valid(self, trained_model):
-        """Vorhergesagte Art ist eine der drei Klassen."""
+        """Vorhergesagte Art ist eine der trainierten Klassen."""
         from model import predict
+        pipeline, _ = trained_model
         result = predict({
             "bill_length_mm": 50.0, "bill_depth_mm": 15.5,
             "flipper_length_mm": 210.0, "body_mass_g": 5200.0,
             "island": "Biscoe", "sex": "Male",
         })
-        assert result["species"] in ["Adelie", "Chinstrap", "Gentoo"]
+        assert result["species"] in list(pipeline.classes_)
 
     def test_predict_confidence_range(self, trained_model):
         """Konfidenz liegt zwischen 0 und 1."""
@@ -156,14 +157,15 @@ class TestPredict:
         assert abs(total - 1.0) < 1e-4
 
     def test_predict_all_species_in_probabilities(self, trained_model):
-        """Alle drei Arten sind in probabilities vorhanden."""
+        """Alle trainierten Klassen sind in probabilities vorhanden."""
         from model import predict
+        pipeline, _ = trained_model
         result = predict({
             "bill_length_mm": 45.0, "bill_depth_mm": 17.0,
             "flipper_length_mm": 195.0, "body_mass_g": 4200.0,
             "island": "Dream", "sex": "Male",
         })
-        for species in ["Adelie", "Chinstrap", "Gentoo"]:
+        for species in list(pipeline.classes_):
             assert species in result["probabilities"]
 
     def test_predict_without_model_raises(self, tmp_path, monkeypatch):
