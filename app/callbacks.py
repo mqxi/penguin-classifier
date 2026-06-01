@@ -38,12 +38,17 @@ SCIENTIFIC_NAMES = {
 }
 
 
-def _build_scatter(df_train: pd.DataFrame, new_point: dict | None = None) -> go.Figure:
+def _build_scatter(
+    df_train: pd.DataFrame,
+    new_point: dict | None = None,
+    df_observations: pd.DataFrame | None = None,
+) -> go.Figure:
     """Erstellt den Scatter-Plot mit Trainings- und optionalem neuem Datenpunkt.
 
     Args:
         df_train: Trainingsdaten.
         new_point: Optionaler neuer Datenpunkt mit species.
+        df_observations: Optionale neue Beobachtungen aus new_observations.csv.
 
     Returns:
         Plotly Figure.
@@ -77,6 +82,36 @@ def _build_scatter(df_train: pd.DataFrame, new_point: dict | None = None) -> go.
     )
     # Punktgröße erhöhen
     fig.update_traces(marker=dict(size=8))
+
+    # Neue Beobachtungen aus new_observations.csv einblenden – nur korrigierte Einträge
+    if df_observations is not None and not df_observations.empty:
+        df_obs_plot = df_observations.dropna(subset=["bill_length_mm", "flipper_length_mm"]).copy()
+        # Nur Einträge mit expliziter Korrektur anzeigen – reine Modellvorhersagen gehören zu den Trainingsdaten
+        if "is_corrected" in df_obs_plot.columns:
+            df_obs_plot = df_obs_plot[df_obs_plot["is_corrected"] == True].copy()
+        if not df_obs_plot.empty:
+            df_obs_plot["_label"] = df_obs_plot["corrected_species"]
+
+            obs_colors = pc.qualitative.Pastel
+            for idx, (label, grp) in enumerate(df_obs_plot.groupby("_label")):
+                base_color = color_map.get(str(label), obs_colors[idx % len(obs_colors)])
+                fig.add_trace(go.Scatter(
+                    x=grp["bill_length_mm"],
+                    y=grp["flipper_length_mm"],
+                    mode="markers",
+                    marker=dict(symbol="diamond", size=9, color=base_color, opacity=0.9, line=dict(width=1.5, color="#333")),
+                    name=f"{label} (neu)",
+                    customdata=grp[["bill_depth_mm", "body_mass_g", "island", "sex"]].values,
+                    hovertemplate=(
+                        f"<b>Neue Beobachtung – {label}</b><br>"
+                        "Schnabellänge: %{x} mm<br>"
+                        "Flossenlänge: %{y} mm<br>"
+                        "Schnabeltiefe: %{customdata[0]} mm<br>"
+                        "Körpermasse: %{customdata[1]} g<br>"
+                        "Insel: %{customdata[2]}<br>"
+                        "Geschlecht: %{customdata[3]}<extra></extra>"
+                    ),
+                ))
 
     # Neuen Datenpunkt hinzufügen
     if new_point is not None:
@@ -258,31 +293,34 @@ def register_callbacks(app) -> None:
         Output("scatter-plot", "figure"),
         Output("store-metrics", "data"),
         Output("model-metrics-box", "children"),
-        Input("scatter-plot", "id"),  # Einmaliger Trigger beim Seitenaufruf
+        Output("store-retrain-fig", "data", allow_duplicate=True),
+        Input("url", "pathname"),
+        prevent_initial_call="initial_duplicate",
     )
-    def initialize_plot_and_metrics(_):
-        """Befüllt Scatter-Plot und Metriken-Store beim ersten Seitenaufruf."""
+    def initialize_plot_and_metrics(pathname):
+        """Befüllt Scatter-Plot und Metriken beim Seitenaufruf – nur Trainingsdaten."""
         try:
             df_train = load_training_data()
+            # App-Start trainiert immer auf penguins.csv – Modell ist garantiert sauber
             _, metrics = get_or_train_model(df_train)
             fig = _build_scatter(df_train)
             metrics_box = _build_metrics_box(metrics)
-            # confusion_matrix ist kein JSON-serialisierbarer Typ – entfernen für Store
             metrics_serializable = {k: v for k, v in metrics.items() if k != "confusion_matrix"}
-            return fig, metrics_serializable, metrics_box
+            return fig, metrics_serializable, metrics_box, None
         except Exception as e:
             logger.error(f"Initialisierungsfehler: {e}")
-            return go.Figure(), {}, []
+            return go.Figure(), {}, [], None
 
     @app.callback(
         Output("result-content", "children"),
-        Output("model-metrics-box", "children"),
-        Output("scatter-plot", "figure"),
+        Output("model-metrics-box", "children", allow_duplicate=True),
+        Output("scatter-plot", "figure", allow_duplicate=True),
         Output("input-error", "children"),
         Output("store-new-point", "data"),
         Output("correction-panel", "style"),
         Output("correction-species-dropdown", "value"),
         Output("correction-status", "children"),
+        Output("retrain-status", "children", allow_duplicate=True),
         Input("btn-classify", "n_clicks"),
         State("input-bill-length", "value"),
         State("input-bill-depth", "value"),
@@ -291,10 +329,13 @@ def register_callbacks(app) -> None:
         State("input-island", "value"),
         State("input-sex", "value"),
         State("store-metrics", "data"),
+        State("store-retrain-fig", "data"),
         prevent_initial_call=True,
     )
-    def classify(n_clicks, bill_length, bill_depth, flipper_length, body_mass, island, sex, stored_metrics):
+    def classify(n_clicks, bill_length, bill_depth, flipper_length, body_mass, island, sex, stored_metrics, retrain_fig_json):
         """Klassifiziert den Datenpunkt bei Button-Klick."""
+        if not n_clicks:
+            return no_update, no_update, no_update, "", no_update, {"display": "none", "marginTop": "16px"}, None, "", ""
         missing = []
         if bill_length is None: missing.append("Schnabellänge")
         if bill_depth is None: missing.append("Schnabeltiefe")
@@ -309,9 +350,10 @@ def register_callbacks(app) -> None:
 
         if missing:
             error_msg = f"Bitte alle Felder ausfüllen. Fehlend: {', '.join(missing)}."
-            fig = _build_scatter(df_train)
+            df_obs = load_observations() if retrain_fig_json else None
+            fig = _build_scatter(df_train, df_observations=df_obs)
             metrics_box = _build_metrics_box(stored_metrics or {})
-            return no_update, metrics_box, fig, error_msg, no_update, correction_hidden, None, ""
+            return no_update, metrics_box, fig, error_msg, no_update, correction_hidden, None, "", ""
 
         input_dict = {
             "bill_length_mm": float(bill_length),
@@ -328,7 +370,7 @@ def register_callbacks(app) -> None:
             logger.error(f"Vorhersagefehler: {e}")
             return (
                 html.P(f"Fehler bei der Klassifizierung: {e}", style={"color": "#c62828"}),
-                no_update, no_update, "", no_update, correction_hidden, None, "",
+                no_update, no_update, "", no_update, correction_hidden, None, "", "",
             )
 
         try:
@@ -337,11 +379,13 @@ def register_callbacks(app) -> None:
             logger.warning(f"Beobachtung konnte nicht gespeichert werden: {e}")
 
         new_point = {**input_dict, "predicted_species": result["species"]}
-        fig = _build_scatter(df_train, new_point=new_point)
+        # Nach Retrain Observations mitzeichnen, sonst nur Trainingsdaten
+        df_obs = load_observations() if retrain_fig_json else None
+        fig = _build_scatter(df_train, new_point=new_point, df_observations=df_obs)
         result_children = _build_result_content(result)
         metrics_box = _build_metrics_box(stored_metrics or {})
 
-        return result_children, metrics_box, fig, "", new_point, correction_visible, None, ""
+        return result_children, metrics_box, fig, "", new_point, correction_visible, None, "", ""
 
     @app.callback(
         Output("input-bill-length", "value"),
@@ -438,24 +482,45 @@ def register_callbacks(app) -> None:
         return False
 
     @app.callback(
+        Output("page-content", "children"),
+        Input("url", "pathname"),
+    )
+    def render_page(pathname):
+        """Routet zwischen Hauptseite und Info-Seite."""
+        from layout import build_info_page, build_main_content
+        if pathname == "/info":
+            return build_info_page()
+        return build_main_content()
+
+    @app.callback(
+        Output("retrain-overlay", "style"),
+        Input("btn-retrain", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def show_retrain_overlay(n_clicks):
+        """Blendet das Lade-Overlay ein wenn Retrain-Button geklickt."""
+        if not n_clicks:
+            return {"display": "none"}
+        return {"display": "block"}
+
+    @app.callback(
         Output("model-metrics-box", "children", allow_duplicate=True),
         Output("retrain-status", "children"),
-        Output("store-metrics", "data"),
-        Output("scatter-plot", "figure", allow_duplicate=True),
+        Output("store-metrics", "data", allow_duplicate=True),
+        Output("store-retrain-fig", "data"),
+        Output("retrain-overlay", "style", allow_duplicate=True),
         Input("btn-retrain", "n_clicks"),
         prevent_initial_call=True,
     )
     def retrain(n_clicks):
-        """Lädt Trainingsdaten neu herunter und trainiert das Modell komplett neu.
-
-        Bestehende Beobachtungen fließen ebenfalls in das Retraining ein.
-        """
+        """Lädt Trainingsdaten neu herunter und trainiert das Modell komplett neu."""
+        if not n_clicks:
+            return no_update, "", no_update, no_update, {"display": "none"}
         try:
-            # Datensatz frisch von GitHub laden (überschreibt penguins.csv)
             reload_dataset()
-            # Neu geladene Trainingsdaten + gespeicherte Beobachtungen kombinieren
+            df_train_fresh = load_training_data()
             df_combined = get_combined_data()
-            _, metrics = retrain_model(df_combined)
+            _, metrics = retrain_model(df_combined, df_eval=df_train_fresh)
 
             metrics_box = _build_metrics_box(metrics)
             n = metrics.get("n_total", 0)
@@ -465,11 +530,20 @@ def register_callbacks(app) -> None:
             )
             metrics_serializable = {k: v for k, v in metrics.items() if k != "confusion_matrix"}
 
-            # Plot mit frisch geladenem Datensatz aktualisieren
-            df_train = load_training_data()
-            fig = _build_scatter(df_train)
-
-            return metrics_box, status, metrics_serializable, fig
+            fig = _build_scatter(df_train_fresh, df_observations=load_observations())
+            return metrics_box, status, metrics_serializable, fig.to_json(), {"display": "none"}
         except Exception as e:
             logger.error(f"Retraining-Fehler: {e}")
-            return no_update, html.Span(f"Fehler beim Retraining: {e}", style={"color": "#c62828"}), no_update, no_update
+            return no_update, html.Span(f"Fehler beim Retraining: {e}", style={"color": "#c62828"}), no_update, no_update, {"display": "none"}
+
+    @app.callback(
+        Output("scatter-plot", "figure", allow_duplicate=True),
+        Input("store-retrain-fig", "data"),
+        prevent_initial_call=True,
+    )
+    def apply_retrain_fig(fig_json):
+        """Überträgt das nach Retraining erzeugte Figure-JSON in den Scatter-Plot."""
+        if not fig_json:
+            return no_update
+        import plotly.io as pio
+        return pio.from_json(fig_json)

@@ -311,56 +311,213 @@ def build_visualization_panel() -> dbc.Col:
     )
 
 
+def _build_header(current_page: str = "main") -> html.Div:
+    """Erstellt den App-Header mit Navigation."""
+    nav_link = (
+        html.A(
+            "← Zurück zur App",
+            href="/",
+            style={"color": "rgba(255,255,255,0.85)", "fontSize": "0.85rem", "textDecoration": "none", "marginLeft": "auto"},
+        )
+        if current_page == "info"
+        else html.A(
+            "Modell & Funktionsweise",
+            href="/info",
+            style={"color": "rgba(255,255,255,0.85)", "fontSize": "0.85rem", "textDecoration": "none", "marginLeft": "auto"},
+        )
+    )
+    return html.Div(
+        style={
+            "backgroundColor": COLORS["primary"],
+            "color": "white",
+            "padding": "16px 30px",
+            "marginBottom": "20px",
+            "boxShadow": "0 2px 4px rgba(0,0,0,0.2)",
+            "display": "flex",
+            "alignItems": "center",
+        },
+        children=[
+            html.H3(
+                "🐧 Pinguin-Klassifikator",
+                style={"margin": 0, "fontWeight": "bold", "display": "inline"},
+            ),
+            html.Span(
+                " – Automatische Artbestimmung anhand morphologischer Messdaten",
+                style={"fontSize": "0.9rem", "opacity": "0.8", "marginLeft": "10px"},
+            ),
+            nav_link,
+        ],
+    )
+
+
+def build_main_content() -> html.Div:
+    """Erstellt den Hauptinhalt mit Header, 3-Panel-Grid und Footer."""
+    return html.Div([
+        _build_header(current_page="main"),
+        # Lade-Overlay – wird beim Retraining eingeblendet
+        html.Div(
+            id="retrain-overlay",
+            style={"display": "none"},
+            children=html.Div(
+                style={
+                    "position": "fixed",
+                    "top": 0, "left": 0, "right": 0, "bottom": 0,
+                    "backgroundColor": "rgba(240,244,248,0.75)",
+                    "zIndex": 999,
+                    "display": "flex",
+                    "flexDirection": "column",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "backdropFilter": "blur(2px)",
+                },
+                children=[
+                    dbc.Spinner(color="primary", size="lg"),
+                    html.Div(
+                        "Modell wird trainiert...",
+                        style={"marginTop": "16px", "color": "#1a3a5c", "fontWeight": "600", "fontSize": "1rem"},
+                    ),
+                ],
+            ),
+        ),
+        dbc.Container(
+            dbc.Row(
+                [
+                    build_input_panel(),
+                    build_result_panel(),
+                    build_visualization_panel(),
+                ],
+                className="g-3 align-items-start",
+            ),
+            fluid=True,
+            style={"paddingLeft": "20px", "paddingRight": "20px"},
+        ),
+        _build_footer(),
+    ])
+
+
+def build_info_page() -> html.Div:
+    """Erstellt die Info-Seite mit Modell- und Bedienungshinweisen."""
+    card_style = {**PANEL_STYLE, "marginBottom": "16px"}
+
+    return html.Div([
+        _build_header(current_page="info"),
+        dbc.Container([
+
+            # Das Modell
+            dbc.Card(dbc.CardBody([
+                html.H5("Das Modell", style=HEADER_STYLE),
+                html.P([
+                    "Eingesetzt wird ein ", html.Strong("Random Forest Classifier"), " (scikit-learn, 100 Bäume, ",
+                    html.Code("class_weight='balanced'"), ") – robust gegenüber kleinen Datensätzen und gut geeignet "
+                    "für mehrklassige Klassifikation mit gemischten Feature-Typen.",
+                ]),
+                html.P([
+                    "Trainiert auf dem ", html.Strong("Palmer Penguins Datensatz"),
+                    " (344 Datenpunkte, 3 Arten). Die Pipeline verarbeitet numerische und kategorische Features getrennt: "
+                    "Median-Imputation + Standardisierung für Maße, Modus-Imputation + One-Hot-Encoding für Insel und Geschlecht.",
+                ]),
+                html.Table([
+                    html.Thead(html.Tr([html.Th("Metrik"), html.Th("Wert")])),
+                    html.Tbody([
+                        html.Tr([html.Td("Accuracy (Test-Set)"), html.Td("98,55 %")]),
+                        html.Tr([html.Td("F1-Score (gewichtet)"), html.Td("98,56 %")]),
+                        html.Tr([html.Td("Kreuzvalidierung (5-fold)"), html.Td("98,84 % ± 0,58 %")]),
+                    ]),
+                ], className="table table-sm table-bordered", style={"fontSize": "0.88rem", "marginTop": "10px"}),
+            ]), style=card_style),
+
+            # Verwendete Features
+            dbc.Card(dbc.CardBody([
+                html.H5("Verwendete Features", style=HEADER_STYLE),
+                html.Table([
+                    html.Thead(html.Tr([html.Th("Feature"), html.Th("Einheit"), html.Th("Typischer Bereich")])),
+                    html.Tbody([
+                        html.Tr([html.Td("Schnabellänge"), html.Td("mm"), html.Td("32 – 60")]),
+                        html.Tr([html.Td("Schnabeltiefe"), html.Td("mm"), html.Td("13 – 22")]),
+                        html.Tr([html.Td("Flossenlänge"), html.Td("mm"), html.Td("172 – 235")]),
+                        html.Tr([html.Td("Körpermasse"), html.Td("g"), html.Td("2700 – 6300")]),
+                        html.Tr([html.Td("Insel"), html.Td("–"), html.Td("Torgersen, Biscoe, Dream")]),
+                        html.Tr([html.Td("Geschlecht"), html.Td("–"), html.Td("Male, Female")]),
+                    ]),
+                ], className="table table-sm table-bordered", style={"fontSize": "0.88rem"}),
+                html.P(
+                    "Fehlende Werte werden automatisch durch Median (numerisch) bzw. häufigsten Wert (kategorisch) ersetzt – "
+                    "unvollständige Eingaben können trotzdem klassifiziert werden.",
+                    style={"fontSize": "0.85rem", "color": "#555", "marginTop": "10px", "marginBottom": 0},
+                ),
+            ]), style=card_style),
+
+            # Bedienung
+            dbc.Card(dbc.CardBody([
+                html.H5("Bedienung", style=HEADER_STYLE),
+                html.Ol([
+                    html.Li("Messwerte im linken Panel eingeben (alle sechs Felder ausfüllen)."),
+                    html.Li([html.Strong("Klassifizieren"), " klicken – Ergebnis erscheint im mittleren Panel mit Art, Konfidenz und Klassenwahrscheinlichkeiten."]),
+                    html.Li("Scatter-Plot im rechten Panel zeigt den neuen Datenpunkt (roter Stern) im Vergleich zu den Trainingsdaten."),
+                    html.Li(["Vorhersage falsch? Im Korrektur-Bereich die richtige Art auswählen und ", html.Strong("Korrektur speichern"), " klicken."]),
+                    html.Li(["Nach mehreren Beobachtungen: ", html.Strong("🔄 Neu trainieren"), " lädt den Originaldatensatz frisch von GitHub und trainiert das Modell auf allen gesammelten Daten neu."]),
+                ], style={"fontSize": "0.9rem", "lineHeight": "1.8"}),
+            ]), style=card_style),
+
+            # Neue Arten & Korrektur
+            dbc.Card(dbc.CardBody([
+                html.H5("Vorhersage-Korrektur & neue Arten", style=HEADER_STYLE),
+                html.P(
+                    'Nach jeder Klassifizierung erscheint ein Korrektur-Panel. Bekannte Arten können direkt aus dem Dropdown '
+                    'gewählt werden. Über "Neue Art..." lässt sich eine eigene Artbezeichnung eingeben.',
+                    style={"fontSize": "0.9rem"},
+                ),
+                html.Div(
+                    style={"backgroundColor": "#fff3e0", "borderRadius": "6px", "padding": "10px 14px"},
+                    children=html.P([
+                        html.Strong("Hinweis: "),
+                        "Für eine neue Art werden mindestens ",
+                        html.Strong("15 Samples"),
+                        " empfohlen, bevor ein Retraining stabile Ergebnisse liefert. "
+                        "Das System erlaubt das Speichern auch mit weniger Samples und informiert per Dialog über den aktuellen Stand.",
+                    ], style={"margin": 0, "fontSize": "0.88rem", "color": "#e65100"}),
+                ),
+                html.P(
+                    "Korrigierte Labels fließen beim nächsten Retraining bevorzugt als Zielwert ein – "
+                    "fehlerhafte Modellvorhersagen verbessern das Modell also langfristig.",
+                    style={"fontSize": "0.88rem", "color": "#555", "marginTop": "10px", "marginBottom": 0},
+                ),
+            ]), style=card_style),
+
+            # Datenquelle
+            dbc.Card(dbc.CardBody([
+                html.H5("Datenquelle", style=HEADER_STYLE),
+                html.P([
+                    "Gorman KB, Williams TD, Fraser WR (2014). ",
+                    html.Em("Ecological sexual dimorphism and environmental variability within a community of Antarctic penguins."),
+                    " PLoS ONE 9(3):e90081.",
+                ], style={"fontSize": "0.88rem"}),
+                html.P([
+                    "Datensatz bereitgestellt von Allison Horst via ",
+                    html.A("palmerpenguins (GitHub)", href="https://github.com/allisonhorst/palmerpenguins", target="_blank"),
+                    ".",
+                ], style={"fontSize": "0.88rem", "marginBottom": 0}),
+            ]), style=card_style),
+
+        ], fluid=True, style={"paddingLeft": "20px", "paddingRight": "20px", "maxWidth": "860px"}),
+        _build_footer(),
+    ])
+
+
 def build_layout() -> html.Div:
-    """Erstellt das vollständige App-Layout.
+    """Erstellt das vollständige App-Layout mit Routing.
 
     Returns:
-        Root-Div mit Header und 3-Panel-Grid.
+        Root-Div mit Stores, dcc.Location und page-content.
     """
     return html.Div(
         style={"backgroundColor": COLORS["background"], "minHeight": "100vh", "fontFamily": "Arial, sans-serif", "paddingBottom": "36px"},
         children=[
-            # Store für Modell-Metriken (session-basiert)
+            dcc.Location(id="url", refresh=False),
             dcc.Store(id="store-metrics"),
             dcc.Store(id="store-new-point"),
-
-            # Header
-            html.Div(
-                style={
-                    "backgroundColor": COLORS["primary"],
-                    "color": "white",
-                    "padding": "16px 30px",
-                    "marginBottom": "20px",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.2)",
-                },
-                children=[
-                    html.H3(
-                        "🐧 Pinguin-Klassifikator",
-                        style={"margin": 0, "fontWeight": "bold", "display": "inline"},
-                    ),
-                    html.Span(
-                        " – Automatische Artbestimmung anhand morphologischer Messdaten",
-                        style={"fontSize": "0.9rem", "opacity": "0.8", "marginLeft": "10px"},
-                    ),
-                ],
-            ),
-
-            # 3-Panel-Grid
-            dbc.Container(
-                dbc.Row(
-                    [
-                        build_input_panel(),
-                        build_result_panel(),
-                        build_visualization_panel(),
-                    ],
-                    className="g-3 align-items-start",
-                ),
-                fluid=True,
-                style={"paddingLeft": "20px", "paddingRight": "20px"},
-            ),
-
-            # Footer
-            _build_footer(),
+            dcc.Store(id="store-retrain-fig"),
+            html.Div(id="page-content"),
         ],
     )
 
