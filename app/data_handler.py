@@ -32,7 +32,7 @@ FEATURE_COLUMNS = [
     "sex",
 ]
 
-OBSERVATION_COLUMNS = FEATURE_COLUMNS + ["predicted_species", "timestamp"]
+OBSERVATION_COLUMNS = FEATURE_COLUMNS + ["predicted_species", "corrected_species", "is_corrected", "timestamp"]
 
 
 def download_dataset() -> None:
@@ -103,27 +103,60 @@ def load_observations() -> pd.DataFrame:
         pd.DataFrame(columns=OBSERVATION_COLUMNS).to_csv(OBSERVATIONS_CSV, index=False)
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
     try:
-        return pd.read_csv(OBSERVATIONS_CSV)
+        df = pd.read_csv(OBSERVATIONS_CSV)
+        if "is_corrected" in df.columns:
+            df["is_corrected"] = df["is_corrected"].fillna(False).astype(bool)
+        if "corrected_species" in df.columns:
+            df["corrected_species"] = df["corrected_species"].fillna("").astype(str)
+        return df
     except Exception as e:
         logger.error(f"Fehler beim Laden der Beobachtungen: {e}")
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
 
 
-def save_observation(input_dict: dict, predicted_species: str) -> None:
+def save_observation(input_dict: dict, predicted_species: str, corrected_species: str | None = None) -> None:
     """Hängt einen neuen klassifizierten Datenpunkt an new_observations.csv an."""
     try:
         new_row = {
             **input_dict,
             "predicted_species": predicted_species,
+            "corrected_species": corrected_species if corrected_species else "",
+            "is_corrected": corrected_species is not None,
             "timestamp": datetime.now().isoformat(),
         }
         df_existing = load_observations()
         df_updated = pd.concat([df_existing, pd.DataFrame([new_row])], ignore_index=True)
         df_updated.to_csv(OBSERVATIONS_CSV, index=False)
-        logger.info(f"Neue Beobachtung gespeichert ({predicted_species})")
+        logger.info(f"Neue Beobachtung gespeichert ({predicted_species}{f' → korrigiert: {corrected_species}' if corrected_species else ''})")
     except Exception as e:
         logger.error(f"Fehler beim Speichern der Beobachtung: {e}")
         raise
+
+
+def correct_last_observation(corrected_species: str) -> None:
+    """Setzt corrected_species und is_corrected für die zuletzt gespeicherte Beobachtung."""
+    try:
+        df = load_observations()
+        if df.empty:
+            raise ValueError("Keine Beobachtungen vorhanden.")
+        df.loc[df.index[-1], "corrected_species"] = corrected_species
+        df.loc[df.index[-1], "is_corrected"] = True
+        df.to_csv(OBSERVATIONS_CSV, index=False)
+        logger.info(f"Letzte Beobachtung korrigiert: {corrected_species}")
+    except Exception as e:
+        logger.error(f"Fehler beim Korrigieren der Beobachtung: {e}")
+        raise
+
+
+def count_species_samples(species: str) -> int:
+    """Zählt wie viele Beobachtungen mit diesem Artlabel (korrigiert oder predicted) gespeichert sind."""
+    df_obs = load_observations()
+    if df_obs.empty:
+        return 0
+    corrected = df_obs[df_obs["is_corrected"] == True]["corrected_species"]
+    predicted = df_obs[df_obs["is_corrected"] != True]["predicted_species"]
+    all_labels = pd.concat([corrected, predicted])
+    return int((all_labels == species).sum())
 
 
 def get_combined_data() -> pd.DataFrame:
@@ -134,9 +167,14 @@ def get_combined_data() -> pd.DataFrame:
     if df_obs.empty:
         return df_train
 
-    # Bei neuen Beobachtungen wird die vorhergesagte Art als Zielwert verwendet
+    # Korrigiertes Label hat Vorrang; sonst predicted_species
     df_obs = df_obs.copy()
-    if "predicted_species" in df_obs.columns:
+    if "is_corrected" in df_obs.columns and "corrected_species" in df_obs.columns:
+        df_obs["species"] = df_obs.apply(
+            lambda r: r["corrected_species"] if r["is_corrected"] and r["corrected_species"] else r.get("predicted_species", ""),
+            axis=1,
+        )
+    elif "predicted_species" in df_obs.columns:
         df_obs["species"] = df_obs["predicted_species"]
 
     cols = FEATURE_COLUMNS + ["species"]
