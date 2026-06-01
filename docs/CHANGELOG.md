@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-01 – Scatter-Erweiterung, Info-Seite, Bugfixes
+
+Neue Beobachtungen erscheinen nach Retraining als Diamanten im Scatter-Plot – ein Trace pro
+korrigierter Art, Farbe entspricht der Artbezeichnung. Ohne Retraining nur Trainingsdaten.
+
+Info-Unterseite unter `/info` ergänzt: Modellbeschreibung, Feature-Tabelle, Bedienungsanleitung,
+Korrektur-Erklärung, Datenquelle. Navigation per Header-Link.
+
+Bugfixes: Modell beim App-Start immer auf `penguins.csv` neu trainieren – neue Arten aus
+`new_observations.csv` erst nach explizitem Retraining aktiv. Retraining-Evaluation auf
+Originaldaten beschränkt (verhinderte 100%-Metriken durch Data Leakage). `reload_dataset()`
+ohne `unlink()` – vermeidet WinError 32 auf Windows. Phantom-Callbacks beim App-Start
+unterdrückt (`n_clicks`-Guard in `classify` und `retrain`). Retrain-Status wird beim
+Klassifizieren zurückgesetzt.
+
+Lade-Overlay beim Retraining: halbransparentes Overlay mit Spinner und Text mittig,
+erscheint beim Klick und verschwindet nach Abschluss.
+
+---
+
 ## 2026-06-01 – Korrektur-Feature und neue Artbezeichnung
 
 Auf Basis von Betreuer-Feedback zwei neue Features implementiert.
