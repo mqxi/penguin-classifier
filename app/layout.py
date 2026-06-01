@@ -197,6 +197,49 @@ def build_result_panel() -> dbc.Col:
                     ),
                 ),
 
+                # Korrektur-Panel (initial versteckt, erscheint nach Klassifizierung)
+                html.Div(
+                    id="correction-panel",
+                    style={"display": "none", "marginTop": "16px"},
+                    children=[
+                        html.Hr(style={"borderColor": COLORS["panel_border"], "margin": "0 0 12px 0"}),
+                        html.Div(
+                            "Vorhersage falsch?",
+                            style={"fontWeight": "600", "fontSize": "0.85rem", "color": "#444", "marginBottom": "8px"},
+                        ),
+                        dcc.Dropdown(
+                            id="correction-species-dropdown",
+                            options=[
+                                {"label": "Adelie", "value": "Adelie"},
+                                {"label": "Chinstrap", "value": "Chinstrap"},
+                                {"label": "Gentoo", "value": "Gentoo"},
+                                {"label": "Neue Art...", "value": "__new__"},
+                            ],
+                            placeholder="Korrekte Art auswählen...",
+                            clearable=True,
+                            style={"fontSize": "0.9rem", "marginBottom": "8px"},
+                        ),
+                        # Freitextfeld für neue Art – nur sichtbar wenn "__new__" gewählt
+                        dcc.Input(
+                            id="correction-new-species-input",
+                            type="text",
+                            placeholder="Artbezeichnung eingeben...",
+                            style={**INPUT_STYLE, "display": "none", "marginBottom": "8px"},
+                            debounce=False,
+                        ),
+                        dbc.Button(
+                            "Korrektur speichern",
+                            id="btn-save-correction",
+                            color="warning",
+                            outline=True,
+                            size="sm",
+                            className="w-100",
+                            style={"fontSize": "0.85rem"},
+                        ),
+                        html.Div(id="correction-status", style={"fontSize": "0.82rem", "marginTop": "8px"}),
+                    ],
+                ),
+
                 # Modellperformanz-Box (immer sichtbar)
                 html.Div(
                     id="model-metrics-box",
@@ -208,6 +251,19 @@ def build_result_panel() -> dbc.Col:
                         "fontSize": "0.82rem",
                         "color": "#555",
                     },
+                ),
+
+                # Modal: Hinweis neue Art
+                dbc.Modal(
+                    [
+                        dbc.ModalHeader(dbc.ModalTitle("Neue Art gespeichert")),
+                        dbc.ModalBody(id="modal-new-species-body"),
+                        dbc.ModalFooter(
+                            dbc.Button("Schließen", id="modal-close", className="ms-auto", n_clicks=0)
+                        ),
+                    ],
+                    id="modal-new-species-info",
+                    is_open=False,
                 ),
             ]),
             style=PANEL_STYLE,
